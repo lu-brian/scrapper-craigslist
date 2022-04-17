@@ -1,0 +1,22 @@
+{
+  "name": "craigslist",
+  "version": "1.0.0",
+  "description": "",
+  "main": "dst/app.js",
+  "scripts": {
+    "test": "echo \"error: no test specified\" && exit 1",
+    "start": "lite-server",
+    "nodemon": "nodemon"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cheerio": "^1.0.0-rc.10",
+    "csv-stringify": "^6.0.5",
+    "express": "^4.17.3",
+    "lite-server": "^2.6.1",
+    "nodemon": "^2.0.15",
+    "puppeteer": "^13.5.2",
+    "stringify": "^5.2.0"
+  }
+}
