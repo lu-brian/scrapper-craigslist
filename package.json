@@ -1,10 +1,10 @@
 {
-  "name": "craigslist",
+  "name": "practice-scrapper-craigslist",
   "version": "1.0.0",
   "description": "",
-  "main": "dst/app.js",
+  "main": "src/app.js",
   "scripts": {
-    "test": "echo \"error: no test specified\" && exit 1",
+    "test": "echo \"Error: no test specified\" && exit 1",
     "start": "lite-server",
     "nodemon": "nodemon"
   },
@@ -18,5 +18,9 @@
     "nodemon": "^2.0.15",
     "puppeteer": "^13.5.2",
     "stringify": "^5.2.0"
+  },
+  "devDependencies": {
+    "@types/puppeteer": "^5.4.5",
+    "typescript": "^4.6.3"
   }
 }

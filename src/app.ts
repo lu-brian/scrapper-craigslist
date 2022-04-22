@@ -1,100 +1,96 @@
-import puppeteer from "puppeteer";
+import { ApartmentAttributes } from './models';
 import { stringify as csvStringify } from 'csv-stringify';
+import puppeteer from 'puppeteer';
 import * as fs from 'fs';
 
 (async () => {
-    const browser = await puppeteer.launch({headless: true});
-    const page = await browser.newPage()
 
-    await page.goto("https://sfbay.craigslist.org/search/sfc/apa?search_distance=4&postal=94103&min_price=1300&max_price=2500&min_bedrooms=1&min_bathrooms=1&availabilityMode=0&sale_date=all+dates")
-    await page.waitForSelector('.result-row')
-    
-    const apartments = {}
-    const sortedapartments = []
-    let next = true;
+  const browser = await puppeteer.launch({headless: true});
+  const page = await browser.newPage();
+  
+  await page.goto("https://sfbay.craigslist.org/search/sfc/apa?search_distance=4&postal=94103&min_price=1300&max_price=2500&min_bedrooms=1&min_bathrooms=1&availabilityMode=0&sale_date=all+dates", {timeout: 5000})
+  await page.waitForSelector('.result-row')
 
-    while (next) {
-
-        const items = await page.$$('#search-results li.result-row')
-
-        for(const item of items) {
-            let date, link, title, price, housing, hood, miles = 'Null'
-            let pictures = []
-
-            try{
-                price = await page.evaluate(el => el.querySelector(`.result-info .result-meta .result-price`).textContent, item)
-            } catch(err){}
-            try{
-                housing = await page.evaluate(el => el.querySelector(`.result-info .result-meta .housing`).textContent, item)
-            } catch(err){}
-            try{
-                hood = await page.evaluate(el => el.querySelector(`.result-info .result-meta .result-hood`).textContent, item)
-            } catch(err){}
-            try{
-                miles = await page.evaluate(el => el.querySelector(`.result-info .result-meta .result-tags .maptag`).textContent, item)
-            } catch(err){}
-            
-            const id = (price+housing+hood+miles).replaceAll(/\W/g, '')
-
-            if (apartments[`${id}`]) {
-                continue
-            } else {
-
-                try{
-                    const raw: string = await page.evaluate(el => el.querySelector(`a.result-image.gallery`).getAttribute('data-ids'), item)
-                    const rawArr = raw.split(',')
-                    
-                    pictures = rawArr.map((el) => {
-                        return `https://images.craigslist.org/${el.substring(2)}_300x300.jpg`
-                    })
-                }catch(err){}
-                try{
-                    title =  await page.evaluate(el => el.querySelector(`.result-info .result-heading .result-title`).textContent, item)
-                } catch(err){}
-                try{
-                    link =  await page.evaluate(el => el.querySelector(`.result-info .result-heading .result-title`).getAttribute('href'), item)
-                } catch(err){}
-                try{
-                    date =  await page.evaluate(el => el.querySelector(`.result-info .result-date`).getAttribute('datetime'), item)
-                } catch(err){}
-
-                const apartment = {
-                    date,
-                    link,
-                    title,
-                    price,
-                    'housing': housing.replaceAll(/[\W(\n)]/g, ''),
-                    hood,
-                    'miles': miles.replaceAll(/mi/g, ''),
-                    pictures
-                }
-
-                apartments[`${id}`] = apartment
-    
-            }
+  const getListings = async (searchResults: puppeteer.Page) => {
+    await searchResults.waitForSelector('#search-results li.result-row > a')
+    return await searchResults.$$eval('#search-results li.result-row', (listings: any) => {
+      return [...listings].map(listing => {
+        const price = 
+          listing.querySelector(`.result-info .result-meta .result-price`) ?
+            Number((listing.querySelector(`.result-info .result-meta .result-price`).textContent).replaceAll(/[\D]/g, '')) : 0;
+        const housing =
+          listing.querySelector(`.result-info .result-meta .housing`) ?
+            (listing.querySelector(`.result-info .result-meta .housing`).textContent).replaceAll(/[ \n)]/g, '') : '';
+        const hood =
+          listing.querySelector(`.result-info .result-meta .result-hood`) ?
+            (listing.querySelector(`.result-info .result-meta .result-hood`).textContent).replaceAll(/[\(\)]/g, '').trim() : '';
+        const miles =
+          listing.querySelector(`.result-info .result-meta .result-tags .maptag`) ?
+            (listing.querySelector(`.result-info .result-meta .result-tags .maptag`).textContent).replaceAll(/mi|\s/g, '') : '0';
+        const title =
+          listing.querySelector(`.result-info .result-heading .result-title`) ?
+            listing.querySelector(`.result-info .result-heading .result-title`).textContent : '';
+        const link =
+          listing.querySelector(`.result-info .result-heading .result-title`) ?
+            listing.querySelector(`.result-info .result-heading .result-title`).getAttribute('href') : '';
+        const date =
+          listing.querySelector(`.result-info .result-date`) ?
+            listing.querySelector(`.result-info .result-date`).getAttribute('datetime') : '';
+        
+        // assumption that listings with the same housing, hood, and miles to be the same
+        const id = (housing+hood+miles).replaceAll(/\W/g, '');
+        
+        const pictures = []
+        if (listing.querySelector(`a.result-image.gallery`).getAttribute('data-ids')) {
+          const getPictures = (listing.querySelector(`a.result-image.gallery`).getAttribute('data-ids')).split(',')
+          const createLink = getPictures.map((picture: string) => {
+            return `https://images.craigslist.org/${picture.substring(2)}_300x300.jpg`
+          })
+          pictures.push(...createLink)
         }
-        // next = false
-        try {
-            await page.click('#searchform > div > div > span.buttons > a.button.next');
-            await page.waitForSelector('#search-results li.result-row > a');
-          } catch (error) {
-            next = false;
-          }
+
+        const apartment: ApartmentAttributes = {
+          id,
+          date,
+          title,
+          link,
+          price,
+          housing,
+          hood,
+          miles,
+          pictures
+        }
+
+        return apartment
+
+      })
+    })
+  }
+
+  // grab all apartments from each page
+  // stop at 25 attempts (3000 total results / 120 results per page)
+  const apartments = [];
+  let nextPage = true;
+  let count = 25;
+  while (nextPage && count > 0){
+    apartments.push(...(await getListings(page)))
+    try{
+      await page.click('#searchform > div > div > span.buttons > a.button.next');
+      count -= 1;
+    }catch(err){
+      nextPage = false;
     }
+  }
 
-    await browser.close();
+  // remove duplicate objects (apartments) by 'id', this chooses the object at the bottom of the list
+  const uniqueApartments = [... new Map(apartments.map(apartment => [apartment['id'], apartment])).values()];
 
-    for (const key in apartments) {
-        sortedapartments.push(apartments[`${key}`])
-    }
-     
-    console.log(sortedapartments)
-    console.log(Object.keys(apartments).length)
+  csvStringify(uniqueApartments, {header: true }, (err, out) => {
+    fs.writeFile('output.csv', out, (error) => {
+      if (error) console.log('Error writing file')
+    })
+  })
 
-    // Export
-    csvStringify(sortedapartments, { header: true }, (error1, output) => {
-        fs.writeFile('output.csv', output, (error2) => {
-            if (error2) throw error2;
-        });
-    });
+  await browser.close();
+
 })();
